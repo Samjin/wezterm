@@ -150,6 +150,8 @@ pub struct Palette {
     pub indexed: HashMap<u8, RgbaColor>,
     /// Configure the colors and styling of the tab bar
     pub tab_bar: Option<TabBarColors>,
+    /// Configure the colors and styling of the workspace sidebar
+    pub workspace_bar: Option<WorkspaceBarColors>,
     /// The color of the "thumb" of the scrollbar; the segment that
     /// represents the current viewable area
     pub scrollbar_thumb: Option<RgbaColor>,
@@ -201,6 +203,12 @@ impl Palette {
             ansi: overlay!(ansi),
             brights: overlay!(brights),
             tab_bar: match (&self.tab_bar, &other.tab_bar) {
+                (Some(a), Some(b)) => Some(a.overlay_with(&b)),
+                (None, Some(b)) => Some(b.clone()),
+                (Some(a), None) => Some(a.clone()),
+                (None, None) => None,
+            },
+            workspace_bar: match (&self.workspace_bar, &other.workspace_bar) {
                 (Some(a), Some(b)) => Some(a.overlay_with(&b)),
                 (None, Some(b)) => Some(b.clone()),
                 (Some(a), None) => Some(a.clone()),
@@ -450,6 +458,75 @@ impl TabBarColors {
     }
 }
 
+/// Specifies the colors to use for the workspace sidebar.
+#[derive(Default, Debug, Clone, PartialEq, FromDynamic, ToDynamic)]
+pub struct WorkspaceBarColors {
+    /// The background color for the workspace sidebar.
+    #[dynamic(default)]
+    pub background: Option<RgbaColor>,
+    /// The color used for the sidebar heading and new-workspace button.
+    #[dynamic(default)]
+    pub foreground: Option<RgbaColor>,
+    /// Styling for the active workspace.
+    #[dynamic(default)]
+    pub active_workspace: Option<TabBarColor>,
+    /// Styling for inactive workspaces.
+    #[dynamic(default)]
+    pub inactive_workspace: Option<TabBarColor>,
+    /// Styling for an inactive workspace with a mouse hovering.
+    #[dynamic(default)]
+    pub inactive_workspace_hover: Option<TabBarColor>,
+}
+
+impl WorkspaceBarColors {
+    pub fn background(&self) -> RgbaColor {
+        self.background
+            .unwrap_or_else(default_workspace_bar_background)
+    }
+
+    pub fn foreground(&self) -> RgbaColor {
+        self.foreground
+            .unwrap_or_else(default_workspace_bar_foreground)
+    }
+
+    pub fn active_workspace(&self) -> TabBarColor {
+        self.active_workspace
+            .clone()
+            .unwrap_or_else(default_workspace_bar_active)
+    }
+
+    pub fn inactive_workspace(&self) -> TabBarColor {
+        self.inactive_workspace
+            .clone()
+            .unwrap_or_else(default_workspace_bar_inactive)
+    }
+
+    pub fn inactive_workspace_hover(&self) -> TabBarColor {
+        self.inactive_workspace_hover
+            .clone()
+            .unwrap_or_else(default_workspace_bar_inactive_hover)
+    }
+
+    pub fn overlay_with(&self, other: &Self) -> Self {
+        macro_rules! overlay {
+            ($name:ident) => {
+                if let Some(c) = &other.$name {
+                    Some(c.clone())
+                } else {
+                    self.$name.clone()
+                }
+            };
+        }
+        Self {
+            background: overlay!(background),
+            foreground: overlay!(foreground),
+            active_workspace: overlay!(active_workspace),
+            inactive_workspace: overlay!(inactive_workspace),
+            inactive_workspace_hover: overlay!(inactive_workspace_hover),
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone, PartialEq, FromDynamic, ToDynamic)]
 #[dynamic(try_from = "String")]
 pub enum IntegratedTitleButtonColor {
@@ -510,6 +587,39 @@ fn default_active_tab() -> TabBarColor {
     TabBarColor {
         bg_color: (0x00, 0x00, 0x00).into(),
         fg_color: (0xc0, 0xc0, 0xc0).into(),
+        ..TabBarColor::default()
+    }
+}
+
+fn default_workspace_bar_background() -> RgbaColor {
+    (0x1b, 0x1d, 0x29).into()
+}
+
+fn default_workspace_bar_foreground() -> RgbaColor {
+    (0x7a, 0x80, 0xa0).into()
+}
+
+fn default_workspace_bar_active() -> TabBarColor {
+    TabBarColor {
+        bg_color: (0x1e, 0x20, 0x2c).into(),
+        fg_color: (0xc5, 0xcb, 0xea).into(),
+        intensity: wezterm_term::Intensity::Bold,
+        ..TabBarColor::default()
+    }
+}
+
+fn default_workspace_bar_inactive() -> TabBarColor {
+    TabBarColor {
+        bg_color: default_workspace_bar_background(),
+        fg_color: (0x9a, 0xa1, 0xbd).into(),
+        ..TabBarColor::default()
+    }
+}
+
+fn default_workspace_bar_inactive_hover() -> TabBarColor {
+    TabBarColor {
+        bg_color: (0x24, 0x27, 0x35).into(),
+        fg_color: (0xc5, 0xcb, 0xea).into(),
         ..TabBarColor::default()
     }
 }

@@ -154,11 +154,18 @@ pub enum TermWindowNotif {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UIItemType {
     TabBar(TabBarItem),
+    WorkspaceBar(WorkspaceBarItem),
     CloseTab(usize),
     AboveScrollThumb,
     ScrollThumb,
     BelowScrollThumb,
     Split(PositionedSplit),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorkspaceBarItem {
+    Workspace(String),
+    NewWorkspace,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -643,7 +650,8 @@ impl TermWindow {
             pixel_max: terminal_size.pixel_width as f32,
             pixel_cell: render_metrics.cell_size.width as f32,
         };
-        let padding_left = config.window_padding.left.evaluate_as_pixels(h_context) as usize;
+        let padding_left = config.window_padding.left.evaluate_as_pixels(h_context) as usize
+            + Self::workspace_bar_width_static();
         let padding_right = resize::effective_right_padding(&config, h_context) as usize;
         let v_context = DimensionContext {
             dpi: dpi as f32,

@@ -1,6 +1,7 @@
 use crate::tabbar::TabBarItem;
 use crate::termwindow::{
-    GuiWin, MouseCapture, PositionedSplit, ScrollHit, TermWindowNotif, UIItem, UIItemType, TMB,
+    GuiWin, MouseCapture, PositionedSplit, ScrollHit, TermWindowNotif, UIItem, UIItemType,
+    WorkspaceBarItem, TMB,
 };
 use ::window::{
     MouseButtons as WMB, MouseCursor, MouseEvent, MouseEventKind as WMEK, MousePress,
@@ -39,6 +40,7 @@ impl super::TermWindow {
             UIItemType::TabBar(_) => {
                 self.update_title_post_status();
             }
+            UIItemType::WorkspaceBar(_) => {}
             UIItemType::CloseTab(_)
             | UIItemType::AboveScrollThumb
             | UIItemType::BelowScrollThumb
@@ -50,6 +52,7 @@ impl super::TermWindow {
     fn enter_ui_item(&mut self, item: &UIItem) {
         match item.item_type {
             UIItemType::TabBar(_) => {}
+            UIItemType::WorkspaceBar(_) => {}
             UIItemType::CloseTab(_)
             | UIItemType::AboveScrollThumb
             | UIItemType::BelowScrollThumb
@@ -367,6 +370,9 @@ impl super::TermWindow {
             UIItemType::TabBar(item) => {
                 self.mouse_event_tab_bar(item, event, context);
             }
+            UIItemType::WorkspaceBar(item) => {
+                self.mouse_event_workspace_bar(item, pane, event, context);
+            }
             UIItemType::AboveScrollThumb => {
                 self.mouse_event_above_scroll_thumb(item, pane, event, context);
             }
@@ -383,6 +389,34 @@ impl super::TermWindow {
                 self.mouse_event_close_tab(idx, event, context);
             }
         }
+    }
+
+    fn mouse_event_workspace_bar(
+        &mut self,
+        item: WorkspaceBarItem,
+        pane: Arc<dyn Pane>,
+        event: MouseEvent,
+        context: &dyn WindowOps,
+    ) {
+        if let WMEK::Press(MousePress::Left) = event.kind {
+            match item {
+                WorkspaceBarItem::Workspace(name) => {
+                    crate::frontend::front_end().switch_workspace(&name);
+                }
+                WorkspaceBarItem::NewWorkspace => {
+                    self.perform_key_assignment(
+                        &pane,
+                        &KeyAssignment::SwitchToWorkspace {
+                            name: None,
+                            spawn: None,
+                        },
+                    )
+                    .ok();
+                }
+            }
+        }
+        context.set_cursor(Some(MouseCursor::Arrow));
+        context.invalidate();
     }
 
     pub fn mouse_event_close_tab(
