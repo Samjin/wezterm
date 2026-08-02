@@ -12,6 +12,73 @@ User facing docs and guide at: https://wezterm.org/
 
 https://wezterm.org/installation
 
+## Workspace Sidebar Development Build
+
+This fork adds an always-visible sidebar on the left side of the window. It
+lists workspaces vertically and supports switching workspaces, creating a new
+workspace with `+`, renaming a workspace with right-click, and resizing the
+sidebar by dragging its right edge. The regular tab bar remains to the right
+of the workspace sidebar.
+
+### Build and run
+
+Build the release binaries and make the launcher available on your `PATH`:
+
+```sh
+cargo build --release
+mkdir -p /path/to/bin
+ln -sfn /path/to/wezterm/scripts/wezterm-sidebar /path/to/bin/wezterm-sidebar
+```
+
+Replace `/path/to/wezterm` and `/path/to/bin` with your local paths. The
+launcher can then be started with:
+
+```sh
+wezterm-sidebar
+```
+
+The launcher uses the local overlay at
+`$XDG_CONFIG_HOME/wezterm/wezterm-sidebar.lua`, or
+`$HOME/.config/wezterm/wezterm-sidebar.lua` when `XDG_CONFIG_HOME` is unset.
+The overlay is optional and should remain local when it contains machine-
+specific paths or settings. Do not use `/private/tmp` for the permanent copy.
+
+The `wezterm` CLI delegates GUI commands to a sibling `wezterm-gui` binary.
+If you link `target/release/wezterm` directly instead of using the launcher,
+link both release binaries into the same bin directory:
+
+```sh
+ln -sfn /path/to/wezterm/target/release/wezterm /path/to/bin/wezterm-sidebar
+ln -sfn /path/to/wezterm/target/release/wezterm-gui /path/to/bin/wezterm-gui
+```
+
+`--always-new-process` is an existing WezTerm option. The launcher uses it so
+the sidebar build starts its own GUI process instead of asking an existing
+official WezTerm process to create the window. `--class wezterm-sidebar-dev`
+keeps the sidebar window separate from the official installation.
+
+### Update from upstream
+
+Save, commit, or stash any current work before rebasing. Then update the
+sidebar branch and rebuild:
+
+```sh
+git fetch upstream
+git rebase upstream/main
+cargo build --release
+git push --force-with-lease origin workspace-sidebar
+```
+
+The launcher continues to use the rebuilt binary. If the branch is shared,
+merge instead of rebasing and push normally:
+
+```sh
+git fetch upstream
+git merge upstream/main
+cargo build --release
+git push origin workspace-sidebar
+```
+
 ## Getting help
 
 This is a spare time project, so please bear with me.  There are a couple of channels for support:
