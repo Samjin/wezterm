@@ -9,18 +9,30 @@ use wezterm_term::color::ColorAttribute;
 use wezterm_term::Line;
 use window::color::LinearRgba;
 
-const WORKSPACE_BAR_WIDTH: usize = 220;
-const HEADER_HEIGHT: usize = 48;
-const ROW_HEIGHT: usize = 36;
+const DEFAULT_WORKSPACE_BAR_WIDTH: usize = 400;
+const MIN_WORKSPACE_BAR_WIDTH: usize = 120;
+const MIN_TERMINAL_COLUMNS: usize = 10;
+const RESIZE_HANDLE_WIDTH: usize = 8;
+const HEADER_VERTICAL_PADDING: usize = 14;
+const ROW_VERTICAL_PADDING: usize = 14;
 const HORIZONTAL_PADDING: usize = 20;
 
 impl crate::TermWindow {
     pub fn workspace_bar_width_static() -> usize {
-        WORKSPACE_BAR_WIDTH
+        DEFAULT_WORKSPACE_BAR_WIDTH
     }
 
     pub fn workspace_bar_width(&self) -> usize {
-        Self::workspace_bar_width_static()
+        self.workspace_bar_width
+    }
+
+    pub fn clamp_workspace_bar_width(&self, width: usize) -> usize {
+        let max_width = self
+            .dimensions
+            .pixel_width
+            .saturating_sub((self.render_metrics.cell_size.width as usize) * MIN_TERMINAL_COLUMNS)
+            .max(MIN_WORKSPACE_BAR_WIDTH);
+        width.clamp(MIN_WORKSPACE_BAR_WIDTH, max_width)
     }
 
     pub fn paint_workspace_bar(
@@ -55,48 +67,78 @@ impl crate::TermWindow {
                 },
         );
         let height = bottom.saturating_sub(top);
+        let background_top = border.top.get() as usize;
+        let background_height = bottom.saturating_sub(background_top);
+        let width = self.workspace_bar_width();
+        let cell_width = self.render_metrics.cell_size.width as usize;
+        let cell_height = self.render_metrics.cell_size.height as usize;
+        let header_height = cell_height + HEADER_VERTICAL_PADDING * 2;
+        let row_height = cell_height + ROW_VERTICAL_PADDING * 2;
+
+        self.ui_items.push(UIItem {
+            x: 0,
+            y: top,
+            width,
+            height,
+            item_type: UIItemType::WorkspaceBar(WorkspaceBarItem::Background),
+        });
 
         self.filled_rectangle(
             layers,
             1,
-            euclid::rect(0., top as f32, WORKSPACE_BAR_WIDTH as f32, height as f32),
+            euclid::rect(
+                0.,
+                background_top as f32,
+                width as f32,
+                background_height as f32,
+            ),
             colors.background().to_linear(),
         )?;
         self.filled_rectangle(
             layers,
             1,
             euclid::rect(
-                (WORKSPACE_BAR_WIDTH - 1) as f32,
-                top as f32,
+                width.saturating_sub(1) as f32,
+                background_top as f32,
                 1.,
-                height as f32,
+                background_height as f32,
             ),
             colors.inactive_workspace().bg_color.to_linear(),
         )?;
 
         let header = header_attributes(&colors);
-        self.paint_workspace_bar_text(layers, top + 14, HORIZONTAL_PADDING, "Spaces", &header)?;
+        let new_workspace_left = width.saturating_sub(HORIZONTAL_PADDING + cell_width);
+        let title = "Spaces";
+        let title_width = title.len() * cell_width;
+        if title_width + HORIZONTAL_PADDING <= new_workspace_left {
+            self.paint_workspace_bar_text(
+                layers,
+                top + HEADER_VERTICAL_PADDING,
+                new_workspace_left - HORIZONTAL_PADDING - title_width,
+                title,
+                &header,
+            )?;
+        }
         self.paint_workspace_bar_text(
             layers,
-            top + 14,
-            WORKSPACE_BAR_WIDTH
-                .saturating_sub(HORIZONTAL_PADDING + self.render_metrics.cell_size.width as usize),
+            top + HEADER_VERTICAL_PADDING,
+            new_workspace_left,
             "+",
             &header,
         )?;
         self.ui_items.push(UIItem {
-            x: WORKSPACE_BAR_WIDTH - HEADER_HEIGHT,
+            x: width.saturating_sub(header_height),
             y: top,
-            width: HEADER_HEIGHT,
-            height: HEADER_HEIGHT,
+            width: header_height,
+            height: header_height,
             item_type: UIItemType::WorkspaceBar(WorkspaceBarItem::NewWorkspace),
         });
 
         let mux = Mux::get();
         let active_workspace = mux.active_workspace();
         for (idx, workspace) in mux.iter_workspaces().into_iter().enumerate() {
-            let row_top = top + HEADER_HEIGHT + idx * ROW_HEIGHT;
-            if row_top + ROW_HEIGHT > bottom {
+            let row_top = top + header_height + idx * row_height;
+            if row_top + row_height > bottom {
                 break;
             }
             let hovered = self.current_mouse_event.is_some()
@@ -117,14 +159,14 @@ impl crate::TermWindow {
                 euclid::rect(
                     8.,
                     row_top as f32,
-                    (WORKSPACE_BAR_WIDTH - 16) as f32,
-                    ROW_HEIGHT as f32,
+                    width.saturating_sub(16) as f32,
+                    row_height as f32,
                 ),
                 style.bg_color.to_linear(),
             )?;
             self.paint_workspace_bar_text(
                 layers,
-                row_top + 9,
+                row_top + ROW_VERTICAL_PADDING,
                 HORIZONTAL_PADDING,
                 &format!("•  {workspace}"),
                 &style.as_cell_attributes(),
@@ -132,17 +174,25 @@ impl crate::TermWindow {
             self.ui_items.push(UIItem {
                 x: 8,
                 y: row_top,
-                width: WORKSPACE_BAR_WIDTH - 16,
-                height: ROW_HEIGHT,
+                width: width.saturating_sub(16),
+                height: row_height,
                 item_type: UIItemType::WorkspaceBar(WorkspaceBarItem::Workspace(workspace)),
             });
         }
+
+        self.ui_items.push(UIItem {
+            x: width.saturating_sub(RESIZE_HANDLE_WIDTH / 2),
+            y: top,
+            width: RESIZE_HANDLE_WIDTH,
+            height,
+            item_type: UIItemType::WorkspaceBar(WorkspaceBarItem::Resize),
+        });
 
         Ok(())
     }
 
     fn paint_workspace_bar_text(
-        &self,
+        &mut self,
         layers: &mut TripleLayerQuadAllocator,
         top: usize,
         left: usize,
@@ -158,14 +208,17 @@ impl crate::TermWindow {
             RenderScreenLineParams {
                 top_pixel_y: top as f32,
                 left_pixel_x: left as f32,
-                pixel_width: WORKSPACE_BAR_WIDTH.saturating_sub(left + HORIZONTAL_PADDING) as f32,
+                pixel_width: self
+                    .workspace_bar_width()
+                    .saturating_sub(left + HORIZONTAL_PADDING) as f32,
                 stable_line_idx: None,
                 line: &line,
                 selection: 0..0,
                 cursor: &Default::default(),
                 palette: &palette,
                 dims: &RenderableDimensions {
-                    cols: (WORKSPACE_BAR_WIDTH / self.render_metrics.cell_size.width as usize)
+                    cols: (self.workspace_bar_width()
+                        / self.render_metrics.cell_size.width as usize)
                         .max(1),
                     physical_top: 0,
                     scrollback_rows: 0,
@@ -173,7 +226,7 @@ impl crate::TermWindow {
                     viewport_rows: 1,
                     dpi: self.terminal_size.dpi,
                     pixel_height: self.render_metrics.cell_size.height as usize,
-                    pixel_width: WORKSPACE_BAR_WIDTH,
+                    pixel_width: self.workspace_bar_width(),
                     reverse_video: false,
                 },
                 config: &self.config,
