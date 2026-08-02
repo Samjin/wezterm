@@ -13,7 +13,7 @@ use mux::pane::{Pane, WithPaneLines};
 use mux::tab::SplitDirection;
 use mux::Mux;
 use mux_lua::MuxPane;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::ops::Sub;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -351,6 +351,20 @@ impl super::TermWindow {
             UIItemType::ScrollThumb => {
                 self.drag_scroll_thumb(item, start_event, event, context);
             }
+            UIItemType::WorkspaceBar(WorkspaceBarItem::Resize) => {
+                let width = usize::try_from(event.coords.x.max(0)).unwrap_or_default();
+                let width = self.clamp_workspace_bar_width(width);
+                if width != self.workspace_bar_width {
+                    self.workspace_bar_width = width;
+                    if let Some(window) = self.window.clone() {
+                        let dimensions = self.dimensions;
+                        self.apply_dimensions(&dimensions, None, &window);
+                    }
+                    context.invalidate();
+                }
+                context.set_cursor(Some(MouseCursor::SizeLeftRight));
+                self.dragging.replace((item, start_event));
+            }
             _ => {
                 log::error!("drag not implemented for {:?}", item);
             }
@@ -366,11 +380,11 @@ impl super::TermWindow {
         context: &dyn WindowOps,
     ) {
         self.last_ui_item.replace(item.clone());
-        match item.item_type {
+        match item.item_type.clone() {
             UIItemType::TabBar(item) => {
                 self.mouse_event_tab_bar(item, event, context);
             }
-            UIItemType::WorkspaceBar(item) => {
+            UIItemType::WorkspaceBar(_) => {
                 self.mouse_event_workspace_bar(item, pane, event, context);
             }
             UIItemType::AboveScrollThumb => {
@@ -393,13 +407,24 @@ impl super::TermWindow {
 
     fn mouse_event_workspace_bar(
         &mut self,
-        item: WorkspaceBarItem,
+        ui_item: UIItem,
         pane: Arc<dyn Pane>,
         event: MouseEvent,
         context: &dyn WindowOps,
     ) {
-        if let WMEK::Press(MousePress::Left) = event.kind {
-            match item {
+        let UIItemType::WorkspaceBar(item) = ui_item.item_type.clone() else {
+            return;
+        };
+        if item == WorkspaceBarItem::Resize {
+            context.set_cursor(Some(MouseCursor::SizeLeftRight));
+            if event.kind == WMEK::Press(MousePress::Left) {
+                self.dragging.replace((ui_item, event));
+            }
+            return;
+        }
+
+        match event.kind {
+            WMEK::Press(MousePress::Left) => match item {
                 WorkspaceBarItem::Workspace(name) => {
                     crate::frontend::front_end().switch_workspace(&name);
                 }
@@ -413,7 +438,14 @@ impl super::TermWindow {
                     )
                     .ok();
                 }
+                WorkspaceBarItem::Background | WorkspaceBarItem::Resize => {}
+            },
+            WMEK::Press(MousePress::Right) => {
+                if let WorkspaceBarItem::Workspace(name) = item {
+                    self.show_workspace_rename_prompt(name);
+                }
             }
+            _ => {}
         }
         context.set_cursor(Some(MouseCursor::Arrow));
         context.invalidate();

@@ -49,6 +49,25 @@ pub fn confirm_close_tab(
     Ok(())
 }
 
+pub fn confirm_close_workspace(
+    tab_id: TabId,
+    mut term: TermWizTerminal,
+    workspace: String,
+    window: ::window::Window,
+) -> anyhow::Result<()> {
+    let message =
+        format!("🛑 Really close workspace `{workspace}` and all contained tabs and panes?");
+    if confirm::run_confirmation(&message, &mut term)? {
+        promise::spawn::spawn_into_main_thread(async move {
+            Mux::get().remove_tab(tab_id);
+        })
+        .detach();
+    }
+    TermWindow::schedule_cancel_overlay(window, tab_id, None);
+
+    Ok(())
+}
+
 pub fn confirm_close_window(
     mut term: TermWizTerminal,
     mux_window_id: WindowId,
