@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+source=$0
+while [ -L "$source" ]; do
+    source_dir=$(CDPATH= cd -P "$(dirname "$source")" && pwd)
+    source=$(readlink "$source")
+    case "$source" in
+        /*) ;;
+        *) source="$source_dir/$source" ;;
+    esac
+done
+
+script_dir=$(CDPATH= cd -P "$(dirname "$source")" && pwd)
+repo_dir=$(CDPATH= cd "$script_dir/.." && pwd)
+config_dir=${XDG_CONFIG_HOME:-"$HOME/.config"}
+config_file=${WEZTERM_SIDEBAR_CONFIG:-"$config_dir/wezterm/wezterm-sidebar.lua"}
+
+set -- start --always-new-process --class wezterm-sidebar-dev "$@"
+if [ -f "$config_file" ]; then
+    set -- --config-file "$config_file" "$@"
+fi
+
+exec "$repo_dir/target/release/wezterm" "$@"
