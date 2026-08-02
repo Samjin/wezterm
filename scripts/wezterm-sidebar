@@ -16,7 +16,7 @@ repo_dir=$(CDPATH= cd "$script_dir/.." && pwd)
 config_dir=${XDG_CONFIG_HOME:-"$HOME/.config"}
 config_file=${WEZTERM_SIDEBAR_CONFIG:-"$config_dir/wezterm/wezterm-sidebar.lua"}
 
-set -- start --always-new-process --class wezterm-sidebar-dev "$@"
+set -- connect --class wezterm-sidebar-dev sidebar "$@"
 if [ -f "$config_file" ]; then
     set -- --config-file "$config_file" "$@"
 fi
