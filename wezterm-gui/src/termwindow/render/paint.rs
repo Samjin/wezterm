@@ -249,7 +249,7 @@ impl crate::TermWindow {
             .context("filled_rectangle for window background")?;
         }
 
-        for pos in panes {
+        for pos in &panes {
             if pos.is_active {
                 self.update_text_cursor(&pos);
                 if focused {
@@ -258,6 +258,11 @@ impl crate::TermWindow {
                 }
             }
             self.paint_pane(&pos, &mut layers).context("paint_pane")?;
+        }
+
+        for pos in &panes {
+            self.paint_active_pane_indicator(pos, &mut layers)
+                .context("paint_active_pane_indicator")?;
         }
 
         if let Some(pane) = self.get_active_pane_or_overlay() {

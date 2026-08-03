@@ -1,4 +1,4 @@
-use crate::quad::{HeapQuadAllocator, QuadTrait, TripleLayerQuadAllocator};
+use crate::quad::{HeapQuadAllocator, TripleLayerQuadAllocator};
 use crate::selection::SelectionRange;
 use crate::termwindow::box_model::*;
 use crate::termwindow::render::{
@@ -154,22 +154,16 @@ impl crate::TermWindow {
         if self.window_background.is_empty() {
             // Per-pane, palette-specified background
 
-            let mut quad = self
-                .filled_rectangle(
-                    layers,
-                    0,
-                    background_rect,
-                    palette
-                        .background
-                        .to_linear()
-                        .mul_alpha(config.window_background_opacity),
-                )
+            self.filled_rectangle(
+                layers,
+                0,
+                background_rect,
+                palette
+                    .background
+                    .to_linear()
+                    .mul_alpha(config.window_background_opacity),
+            )
                 .context("filled_rectangle")?;
-            quad.set_hsv(if pos.is_active {
-                None
-            } else {
-                Some(config.inactive_pane_hsb)
-            });
         }
 
         {
@@ -209,15 +203,8 @@ impl crate::TermWindow {
                 };
                 log::trace!("bell color is {:?}", background);
 
-                let mut quad = self
-                    .filled_rectangle(layers, 0, background_rect, background)
+                self.filled_rectangle(layers, 0, background_rect, background)
                     .context("filled_rectangle")?;
-
-                quad.set_hsv(if pos.is_active {
-                    None
-                } else {
-                    Some(config.inactive_pane_hsb)
-                });
             }
         }
 
@@ -578,6 +565,42 @@ impl crate::TermWindow {
         */
         metrics::histogram!("paint_pane.lines").record(start.elapsed());
         log::trace!("lines elapsed {:?}", start.elapsed());
+
+        Ok(())
+    }
+
+    pub fn paint_active_pane_indicator(
+        &self,
+        pos: &PositionedPane,
+        layers: &mut TripleLayerQuadAllocator,
+    ) -> anyhow::Result<()> {
+        if !pos.is_active {
+            return Ok(());
+        }
+
+        let cell_width = self.render_metrics.cell_size.width as f32;
+        let cell_height = self.render_metrics.cell_size.height as f32;
+        let (padding_left, padding_top) = self.padding_left_top();
+        let tab_bar_height = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
+            self.tab_bar_pixel_height()?
+        } else {
+            0.
+        };
+        let border = self.get_os_border();
+        let left = padding_left + border.left.get() as f32 + pos.left as f32 * cell_width;
+        let top_pixel_y = tab_bar_height + padding_top + border.top.get() as f32;
+        let top = if pos.top == 0 {
+            top_pixel_y - padding_top
+        } else {
+            top_pixel_y + pos.top as f32 * cell_height - (cell_height / 2.0) + 1.
+        };
+
+        self.filled_rectangle(
+            layers,
+            2,
+            euclid::rect(left, top, pos.width as f32 * cell_width, 2.),
+            pos.pane.palette().cursor_border.to_linear(),
+        )?;
 
         Ok(())
     }
