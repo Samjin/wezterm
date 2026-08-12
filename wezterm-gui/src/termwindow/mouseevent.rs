@@ -1,6 +1,7 @@
 use crate::tabbar::TabBarItem;
 use crate::termwindow::{
-    GuiWin, MouseCapture, PositionedSplit, ScrollHit, TermWindowNotif, UIItem, UIItemType, TMB,
+    GuiWin, MouseCapture, PositionedSplit, ScrollHit, TermWindowNotif, UIItem, UIItemType,
+    WorkspaceBarItem, TMB,
 };
 use ::window::{
     MouseButtons as WMB, MouseCursor, MouseEvent, MouseEventKind as WMEK, MousePress,
@@ -12,7 +13,7 @@ use mux::pane::{Pane, WithPaneLines};
 use mux::tab::SplitDirection;
 use mux::Mux;
 use mux_lua::MuxPane;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::ops::Sub;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -39,6 +40,7 @@ impl super::TermWindow {
             UIItemType::TabBar(_) => {
                 self.update_title_post_status();
             }
+            UIItemType::WorkspaceBar(_) => {}
             UIItemType::CloseTab(_)
             | UIItemType::AboveScrollThumb
             | UIItemType::BelowScrollThumb
@@ -50,6 +52,7 @@ impl super::TermWindow {
     fn enter_ui_item(&mut self, item: &UIItem) {
         match item.item_type {
             UIItemType::TabBar(_) => {}
+            UIItemType::WorkspaceBar(_) => {}
             UIItemType::CloseTab(_)
             | UIItemType::AboveScrollThumb
             | UIItemType::BelowScrollThumb
@@ -348,6 +351,20 @@ impl super::TermWindow {
             UIItemType::ScrollThumb => {
                 self.drag_scroll_thumb(item, start_event, event, context);
             }
+            UIItemType::WorkspaceBar(WorkspaceBarItem::Resize) => {
+                let width = usize::try_from(event.coords.x.max(0)).unwrap_or_default();
+                let width = self.clamp_workspace_bar_width(width);
+                if width != self.workspace_bar_width {
+                    self.workspace_bar_width = width;
+                    if let Some(window) = self.window.clone() {
+                        let dimensions = self.dimensions;
+                        self.apply_dimensions(&dimensions, None, &window);
+                    }
+                    context.invalidate();
+                }
+                context.set_cursor(Some(MouseCursor::SizeLeftRight));
+                self.dragging.replace((item, start_event));
+            }
             _ => {
                 log::error!("drag not implemented for {:?}", item);
             }
@@ -363,9 +380,12 @@ impl super::TermWindow {
         context: &dyn WindowOps,
     ) {
         self.last_ui_item.replace(item.clone());
-        match item.item_type {
+        match item.item_type.clone() {
             UIItemType::TabBar(item) => {
                 self.mouse_event_tab_bar(item, event, context);
+            }
+            UIItemType::WorkspaceBar(_) => {
+                self.mouse_event_workspace_bar(item, pane, event, context);
             }
             UIItemType::AboveScrollThumb => {
                 self.mouse_event_above_scroll_thumb(item, pane, event, context);
@@ -383,6 +403,52 @@ impl super::TermWindow {
                 self.mouse_event_close_tab(idx, event, context);
             }
         }
+    }
+
+    fn mouse_event_workspace_bar(
+        &mut self,
+        ui_item: UIItem,
+        pane: Arc<dyn Pane>,
+        event: MouseEvent,
+        context: &dyn WindowOps,
+    ) {
+        let UIItemType::WorkspaceBar(item) = ui_item.item_type.clone() else {
+            return;
+        };
+        if item == WorkspaceBarItem::Resize {
+            context.set_cursor(Some(MouseCursor::SizeLeftRight));
+            if event.kind == WMEK::Press(MousePress::Left) {
+                self.dragging.replace((ui_item, event));
+            }
+            return;
+        }
+
+        match event.kind {
+            WMEK::Press(MousePress::Left) => match item {
+                WorkspaceBarItem::Workspace(name) => {
+                    crate::frontend::front_end().switch_workspace(&name);
+                }
+                WorkspaceBarItem::NewWorkspace => {
+                    self.perform_key_assignment(
+                        &pane,
+                        &KeyAssignment::SwitchToWorkspace {
+                            name: None,
+                            spawn: None,
+                        },
+                    )
+                    .ok();
+                }
+                WorkspaceBarItem::Background | WorkspaceBarItem::Resize => {}
+            },
+            WMEK::Press(MousePress::Right) => {
+                if let WorkspaceBarItem::Workspace(name) = item {
+                    self.show_workspace_rename_prompt(name);
+                }
+            }
+            _ => {}
+        }
+        context.set_cursor(Some(MouseCursor::Arrow));
+        context.invalidate();
     }
 
     pub fn mouse_event_close_tab(
@@ -450,6 +516,28 @@ impl super::TermWindow {
         promise::spawn::spawn(config::with_lua_config_on_main_thread(move |lua| {
             dispatch_new_tab_button(lua, window, pane, button, action)
         }))
+        .detach();
+    }
+
+    fn do_tab_right_click(&mut self, tab_idx: usize) {
+        if self.activate_tab(tab_idx as isize).is_err() {
+            return;
+        }
+        let pane = match self.get_active_pane_or_overlay() {
+            Some(pane) => pane,
+            None => return,
+        };
+        let window = GuiWin::new(self);
+        let pane = MuxPane(pane.pane_id());
+        promise::spawn::spawn(config::with_lua_config_on_main_thread(
+            move |lua| async move {
+                if let Some(lua) = lua {
+                    let args = lua.pack_multi((window, pane))?;
+                    config::lua::emit_event(&lua, ("tab-right-click".to_string(), args)).await?;
+                }
+                Ok(())
+            },
+        ))
         .detach();
     }
 
@@ -523,8 +611,8 @@ impl super::TermWindow {
                 | TabBarItem::WindowButton(_) => {}
             },
             WMEK::Press(MousePress::Right) => match item {
-                TabBarItem::Tab { .. } => {
-                    self.show_tab_navigator();
+                TabBarItem::Tab { tab_idx, .. } => {
+                    self.do_tab_right_click(tab_idx);
                 }
                 TabBarItem::NewTabButton { .. } => {
                     self.do_new_tab_button_click(MousePress::Right);

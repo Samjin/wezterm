@@ -303,27 +303,12 @@ impl crate::TermWindow {
                 _ => 0.,
             })
             .sum();
-        let max_tab_width = ((self.dimensions.pixel_width as f32 / num_tabs)
-            - (1.5 * metrics.cell_size.width as f32))
-            .max(0.);
-
-        // Reserve space for the native titlebar buttons
-        if self
-            .config
-            .window_decorations
-            .contains(::window::WindowDecorations::INTEGRATED_BUTTONS)
-            && self.config.integrated_title_button_style == IntegratedTitleButtonStyle::MacOsNative
-            && !self.window_state.contains(window::WindowState::FULL_SCREEN)
-        {
-            left_status.push(
-                Element::new(&font, ElementContent::Text("".to_string())).margin(BoxDimension {
-                    left: Dimension::Cells(4.0), // FIXME: determine exact width of macos ... buttons
-                    right: Dimension::Cells(0.),
-                    top: Dimension::Cells(0.),
-                    bottom: Dimension::Cells(0.),
-                }),
-            );
-        }
+        let tab_bar_width = self
+            .dimensions
+            .pixel_width
+            .saturating_sub(self.workspace_bar_width());
+        let max_tab_width =
+            ((tab_bar_width as f32 / num_tabs) - (1.5 * metrics.cell_size.width as f32)).max(0.);
 
         for item in items {
             match item.item {
@@ -370,22 +355,12 @@ impl crate::TermWindow {
             .config
             .window_decorations
             .contains(window::WindowDecorations::INTEGRATED_BUTTONS)
-            && (self.config.integrated_title_button_alignment
+            && self.config.integrated_title_button_alignment
                 == IntegratedTitleButtonAlignment::Left
-                || self.config.integrated_title_button_style
-                    == IntegratedTitleButtonStyle::MacOsNative);
+            && self.config.integrated_title_button_style != IntegratedTitleButtonStyle::MacOsNative;
 
         let left_padding = if window_buttons_at_left {
-            if self.config.integrated_title_button_style == IntegratedTitleButtonStyle::MacOsNative
-            {
-                if !self.window_state.contains(window::WindowState::FULL_SCREEN) {
-                    Dimension::Pixels(70.0)
-                } else {
-                    Dimension::Cells(0.5)
-                }
-            } else {
-                Dimension::Pixels(0.0)
-            }
+            Dimension::Pixels(0.0)
         } else {
             Dimension::Cells(0.5)
         };
@@ -433,9 +408,9 @@ impl crate::TermWindow {
                     pixel_cell: metrics.cell_size.width as f32,
                 },
                 bounds: euclid::rect(
-                    border.left.get() as f32,
+                    self.workspace_bar_width() as f32,
                     0.,
-                    self.dimensions.pixel_width as f32 - (border.left + border.right).get() as f32,
+                    tab_bar_width.saturating_sub(border.right.get()) as f32,
                     tab_bar_height,
                 ),
                 metrics: &metrics,

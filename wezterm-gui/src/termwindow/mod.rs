@@ -5,9 +5,9 @@ use crate::colorease::ColorEase;
 use crate::frontend::{front_end, try_front_end};
 use crate::inputmap::InputMap;
 use crate::overlay::{
-    confirm_close_pane, confirm_close_tab, confirm_close_window, confirm_quit_program, launcher,
-    start_overlay, start_overlay_pane, CopyModeParams, CopyOverlay, LauncherArgs, LauncherFlags,
-    QuickSelectOverlay,
+    confirm_close_pane, confirm_close_tab, confirm_close_window, confirm_close_workspace,
+    confirm_quit_program, launcher, start_overlay, start_overlay_pane, CopyModeParams, CopyOverlay,
+    LauncherArgs, LauncherFlags, QuickSelectOverlay,
 };
 use crate::resize_increment_calculator::ResizeIncrementCalculator;
 use crate::scripting::guiwin::GuiWin;
@@ -154,11 +154,20 @@ pub enum TermWindowNotif {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UIItemType {
     TabBar(TabBarItem),
+    WorkspaceBar(WorkspaceBarItem),
     CloseTab(usize),
     AboveScrollThumb,
     ScrollThumb,
     BelowScrollThumb,
     Split(PositionedSplit),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorkspaceBarItem {
+    Workspace(String),
+    NewWorkspace,
+    Background,
+    Resize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -392,6 +401,7 @@ pub struct TermWindow {
     key_table_state: KeyTableState,
     show_tab_bar: bool,
     show_scroll_bar: bool,
+    workspace_bar_width: usize,
     tab_bar: TabBarState,
     fancy_tab_bar: Option<box_model::ComputedElement>,
     pub right_status: String,
@@ -643,7 +653,8 @@ impl TermWindow {
             pixel_max: terminal_size.pixel_width as f32,
             pixel_cell: render_metrics.cell_size.width as f32,
         };
-        let padding_left = config.window_padding.left.evaluate_as_pixels(h_context) as usize;
+        let padding_left = config.window_padding.left.evaluate_as_pixels(h_context) as usize
+            + Self::workspace_bar_width_static();
         let padding_right = resize::effective_right_padding(&config, h_context) as usize;
         let v_context = DimensionContext {
             dpi: dpi as f32,
@@ -714,6 +725,7 @@ impl TermWindow {
             dead_key_status: DeadKeyStatus::None,
             show_tab_bar,
             show_scroll_bar: config.enable_scroll_bar,
+            workspace_bar_width: Self::workspace_bar_width_static(),
             tab_bar: TabBarState::default(),
             fancy_tab_bar: None,
             right_status: String::new(),
@@ -1292,8 +1304,11 @@ impl TermWindow {
                     window.invalidate();
                     self.update_title_post_status();
                 }
-                MuxNotification::WindowRemoved(_window_id) => {
-                    // Handled by frontend
+                MuxNotification::WindowRemoved(_)
+                | MuxNotification::WindowWorkspaceChanged(_)
+                | MuxNotification::ActiveWorkspaceChanged(_)
+                | MuxNotification::WindowCreated(_) => {
+                    window.invalidate();
                 }
                 MuxNotification::AssignClipboard { .. } => {
                     // Handled by frontend
@@ -1315,10 +1330,7 @@ impl TermWindow {
                 MuxNotification::PaneAdded(_)
                 | MuxNotification::WorkspaceRenamed { .. }
                 | MuxNotification::PaneRemoved(_)
-                | MuxNotification::WindowWorkspaceChanged(_)
-                | MuxNotification::ActiveWorkspaceChanged(_)
-                | MuxNotification::Empty
-                | MuxNotification::WindowCreated(_) => {}
+                | MuxNotification::Empty => {}
             },
             TermWindowNotif::EmitStatusUpdate => {
                 self.emit_status_event();
@@ -1497,13 +1509,14 @@ impl TermWindow {
             }
             MuxNotification::WindowRemoved(window_id) => {
                 if window_id != mux_window_id {
+                    // Workspace changes in other windows can change the sidebar.
+                } else {
+                    // The removed window matches our current mux_window_id.
+                    // During workspace switches, mux_window_id may be stale.
+                    // Skip this notification but keep the subscription alive.
+                    // (next notifs should finish the workspace switch & reconcile the state)
                     return true;
                 }
-                // The removed window matches our current mux_window_id.
-                // During workspace switches, mux_window_id may be stale.
-                // Skip this notification but keep the subscription alive.
-                // (next notifs should finish the workspace switch & reconcile the state)
-                return true;
             }
             MuxNotification::TabResized(tab_id)
             | MuxNotification::TabTitleChanged { tab_id, .. } => {
@@ -1522,9 +1535,9 @@ impl TermWindow {
             | MuxNotification::SaveToDownloads { .. }
             | MuxNotification::WindowCreated(_)
             | MuxNotification::ActiveWorkspaceChanged(_)
+            | MuxNotification::WindowWorkspaceChanged(_)
             | MuxNotification::WorkspaceRenamed { .. }
-            | MuxNotification::Empty
-            | MuxNotification::WindowWorkspaceChanged(_) => return true,
+            | MuxNotification::Empty => return true,
             MuxNotification::Alert {
                 alert: Alert::PaletteChanged { .. },
                 ..
@@ -1989,7 +2002,10 @@ impl TermWindow {
         };
 
         let new_tab_bar = TabBarState::new(
-            self.dimensions.pixel_width / self.render_metrics.cell_size.width as usize,
+            self.dimensions
+                .pixel_width
+                .saturating_sub(self.workspace_bar_width())
+                / self.render_metrics.cell_size.width as usize,
             if hovering_in_tab_bar {
                 Some(self.last_mouse_coords.0)
             } else {
@@ -2319,6 +2335,24 @@ impl TermWindow {
 
         let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
             crate::overlay::prompt::show_line_prompt_overlay(term, args, gui_win, pane)
+        });
+        self.assign_overlay(tab.tab_id(), overlay);
+        promise::spawn::spawn(future).detach();
+    }
+
+    fn show_workspace_rename_prompt(&mut self, old_workspace: String) {
+        let mux = Mux::get();
+        let tab = match mux.get_active_tab_for_window(self.mux_window_id) {
+            Some(tab) => tab,
+            None => return,
+        };
+
+        let window = match self.window.clone() {
+            Some(window) => window,
+            None => return,
+        };
+        let (overlay, future) = start_overlay(self, &tab, move |_tab_id, term| {
+            crate::overlay::prompt::show_workspace_rename_prompt(term, old_workspace, window)
         });
         self.assign_overlay(tab.tab_id(), overlay);
         promise::spawn::spawn(future).detach();
@@ -2957,6 +2991,12 @@ impl TermWindow {
                     tab.adjust_pane_size(*direction, *amount);
                 }
             }
+            EqualizePanes => {
+                let mux = Mux::get();
+                if let Some(tab) = mux.get_active_tab_for_window(self.mux_window_id) {
+                    tab.equalize_panes();
+                }
+            }
             ActivatePaneByIndex(index) => {
                 let mux = Mux::get();
                 let tab = match mux.get_active_tab_for_window(self.mux_window_id) {
@@ -3273,7 +3313,22 @@ impl TermWindow {
         };
         let tab_id = tab.tab_id();
         let mux_window_id = self.mux_window_id;
-        if confirm && !tab.can_close_without_prompting(CloseReason::Tab) {
+        let workspace = mux
+            .get_window(mux_window_id)
+            .and_then(|mux_window| {
+                let workspace = mux_window.get_workspace().to_string();
+                (mux_window.iter().count() == 1).then_some(workspace)
+            })
+            .filter(|workspace| mux.iter_windows_in_workspace(workspace).len() == 1);
+
+        if let Some(workspace) = workspace {
+            let window = self.window.clone().unwrap();
+            let (overlay, future) = start_overlay(self, &tab, move |tab_id, term| {
+                confirm_close_workspace(tab_id, term, workspace, window)
+            });
+            self.assign_overlay(tab_id, overlay);
+            promise::spawn::spawn(future).detach();
+        } else if confirm && !tab.can_close_without_prompting(CloseReason::Tab) {
             let window = self.window.clone().unwrap();
             let (overlay, future) = start_overlay(self, &tab, move |tab_id, term| {
                 confirm_close_tab(tab_id, term, mux_window_id, window)

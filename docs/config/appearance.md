@@ -402,6 +402,33 @@ config.colors = {
 }
 ```
 
+### Workspace Sidebar Colors
+
+The native workspace sidebar is always visible on the left side of the window.
+Configure it with `colors.workspace_bar`:
+
+```lua
+config.colors = {
+  workspace_bar = {
+    background = '#1b1d29',
+    foreground = '#7a80a0',
+    active_workspace = {
+      bg_color = '#1e202c',
+      fg_color = '#c5cbea',
+      intensity = 'Bold',
+    },
+    inactive_workspace = {
+      bg_color = '#1b1d29',
+      fg_color = '#9aa1bd',
+    },
+    inactive_workspace_hover = {
+      bg_color = '#242735',
+      fg_color = '#c5cbea',
+    },
+  },
+}
+```
+
 ### Window Padding
 
 You may add padding around the edges of the terminal area.
@@ -548,4 +575,3 @@ through to `1.0` (completely opaque).
 ```lua
 config.text_background_opacity = 0.3
 ```
-

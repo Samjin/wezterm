@@ -35,13 +35,22 @@ impl crate::TermWindow {
         } else {
             border.top.get() as f32
         };
+        let workspace_bar_width = self.workspace_bar_width();
+        let tab_bar_width = self
+            .dimensions
+            .pixel_width
+            .saturating_sub(workspace_bar_width);
 
         // Register the tab bar location
-        self.ui_items.append(&mut self.tab_bar.compute_ui_items(
+        let mut ui_items = self.tab_bar.compute_ui_items(
             tab_bar_y as usize,
             self.render_metrics.cell_size.height as usize,
             self.render_metrics.cell_size.width as usize,
-        ));
+        );
+        for item in &mut ui_items {
+            item.x += workspace_bar_width;
+        }
+        self.ui_items.append(&mut ui_items);
 
         let window_is_transparent =
             !self.window_background.is_empty() || self.config.window_background_opacity != 1.0;
@@ -60,23 +69,22 @@ impl crate::TermWindow {
         self.render_screen_line(
             RenderScreenLineParams {
                 top_pixel_y: tab_bar_y,
-                left_pixel_x: 0.,
-                pixel_width: self.dimensions.pixel_width as f32,
+                left_pixel_x: workspace_bar_width as f32,
+                pixel_width: tab_bar_width as f32,
                 stable_line_idx: None,
                 line: self.tab_bar.line(),
                 selection: 0..0,
                 cursor: &Default::default(),
                 palette: &palette,
                 dims: &RenderableDimensions {
-                    cols: self.dimensions.pixel_width
-                        / self.render_metrics.cell_size.width as usize,
+                    cols: (tab_bar_width / self.render_metrics.cell_size.width as usize).max(1),
                     physical_top: 0,
                     scrollback_rows: 0,
                     scrollback_top: 0,
                     viewport_rows: 1,
                     dpi: self.terminal_size.dpi,
                     pixel_height: self.render_metrics.cell_size.height as usize,
-                    pixel_width: self.terminal_size.pixel_width,
+                    pixel_width: tab_bar_width,
                     reverse_video: false,
                 },
                 config: &self.config,

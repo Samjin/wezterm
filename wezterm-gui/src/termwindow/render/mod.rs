@@ -44,6 +44,7 @@ pub mod screen_line;
 pub mod split;
 pub mod tab_bar;
 pub mod window_buttons;
+pub mod workspace_bar;
 
 /// The data that we associate with a line; we use this to cache it shape hash
 #[derive(Debug)]
@@ -363,9 +364,11 @@ impl crate::TermWindow {
             .bottom
             .evaluate_as_pixels(v_context);
 
+        let workspace_bar_width = self.workspace_bar_width() as f32;
         let horizontal_gap = self.dimensions.pixel_width as f32
             - self.terminal_size.pixel_width as f32
             - padding_left
+            - workspace_bar_width
             - if self.show_scroll_bar && padding_right.is_zero() {
                 h_context.pixel_cell
             } else {
@@ -391,7 +394,10 @@ impl crate::TermWindow {
             VerticalWindowContentAlignment::Bottom => vertical_gap,
         };
 
-        (padding_left + left_gap, padding_top + top_gap)
+        (
+            padding_left + workspace_bar_width + left_gap,
+            padding_top + top_gap,
+        )
     }
 
     fn resolve_lock_glyph(

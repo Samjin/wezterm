@@ -1,12 +1,15 @@
 use crate::scripting::guiwin::GuiWin;
+use crate::termwindow::TermWindowNotif;
 use config::keyassignment::{KeyAssignment, PromptInputLine};
 use mux::termwiztermtab::TermWizTerminal;
+use mux::Mux;
 use mux_lua::MuxPane;
 use std::rc::Rc;
 use termwiz::input::{InputEvent, KeyCode, KeyEvent};
 use termwiz::lineedit::*;
 use termwiz::surface::Change;
 use termwiz::terminal::Terminal;
+use window::{Window, WindowOps};
 
 struct PromptHost {
     history: BasicHistory,
@@ -70,6 +73,42 @@ pub fn show_line_prompt_overlay(
         anyhow::Result::<()>::Ok(())
     })
     .detach();
+
+    Ok(())
+}
+
+pub fn show_workspace_rename_prompt(
+    mut term: TermWizTerminal,
+    old_workspace: String,
+    window: Window,
+) -> anyhow::Result<()> {
+    term.no_grab_mouse_in_raw_mode();
+    term.render(&[Change::Text(format!(
+        "Rename workspace `{old_workspace}`:\r\n"
+    ))])?;
+
+    let mut host = PromptHost::new();
+    let mut editor = LineEditor::new(&mut term);
+    editor.set_prompt("New name: ");
+    let new_workspace = editor
+        .read_line_with_optional_initial_value(&mut host, Some(&old_workspace))?
+        .map(|name| name.trim().to_string());
+
+    if let Some(new_workspace) = new_workspace {
+        window.notify(TermWindowNotif::Apply(Box::new(move |_| {
+            let mux = Mux::get();
+            if new_workspace.is_empty()
+                || new_workspace == old_workspace
+                || mux
+                    .iter_workspaces()
+                    .iter()
+                    .any(|name| name == &new_workspace)
+            {
+                return;
+            }
+            mux.rename_workspace(&old_workspace, &new_workspace);
+        })));
+    }
 
     Ok(())
 }
