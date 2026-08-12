@@ -2991,6 +2991,12 @@ impl TermWindow {
                     tab.adjust_pane_size(*direction, *amount);
                 }
             }
+            EqualizePanes => {
+                let mux = Mux::get();
+                if let Some(tab) = mux.get_active_tab_for_window(self.mux_window_id) {
+                    tab.equalize_panes();
+                }
+            }
             ActivatePaneByIndex(index) => {
                 let mux = Mux::get();
                 let tab = match mux.get_active_tab_for_window(self.mux_window_id) {

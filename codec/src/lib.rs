@@ -502,6 +502,7 @@ pdu! {
     GetPaneDirection: 60,
     GetPaneDirectionResponse: 61,
     AdjustPaneSize: 62,
+    EqualizePanes: 63,
 }
 
 impl Pdu {
@@ -517,6 +518,7 @@ impl Pdu {
             | Self::Resize(_)
             | Self::SetClipboard(_)
             | Self::SetPaneZoomed(_)
+            | Self::EqualizePanes(_)
             | Self::SpawnV2(_) => true,
             _ => false,
         }
@@ -874,6 +876,11 @@ pub struct AdjustPaneSize {
     pub pane_id: PaneId,
     pub direction: PaneDirection,
     pub amount: usize,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct EqualizePanes {
+    pub pane_id: PaneId,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
