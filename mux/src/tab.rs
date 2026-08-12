@@ -750,17 +750,9 @@ impl Tab {
         request: SplitRequest,
         pane: Arc<dyn Pane>,
     ) -> anyhow::Result<usize> {
-        let result = self
-            .inner
+        self.inner
             .lock()
-            .split_and_insert(pane_index, request, pane);
-        if result.is_ok() {
-            let mux = Mux::get();
-            if let Some(window_id) = mux.window_containing_tab(self.tab_id()) {
-                mux.notify(MuxNotification::WindowInvalidated(window_id));
-            }
-        }
-        result
+            .split_and_insert(pane_index, request, pane)
     }
 
     pub fn get_zoomed_pane(&self) -> Option<Arc<dyn Pane>> {
