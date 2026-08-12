@@ -519,6 +519,28 @@ impl super::TermWindow {
         .detach();
     }
 
+    fn do_tab_right_click(&mut self, tab_idx: usize) {
+        if self.activate_tab(tab_idx as isize).is_err() {
+            return;
+        }
+        let pane = match self.get_active_pane_or_overlay() {
+            Some(pane) => pane,
+            None => return,
+        };
+        let window = GuiWin::new(self);
+        let pane = MuxPane(pane.pane_id());
+        promise::spawn::spawn(config::with_lua_config_on_main_thread(
+            move |lua| async move {
+                if let Some(lua) = lua {
+                    let args = lua.pack_multi((window, pane))?;
+                    config::lua::emit_event(&lua, ("tab-right-click".to_string(), args)).await?;
+                }
+                Ok(())
+            },
+        ))
+        .detach();
+    }
+
     pub fn mouse_event_tab_bar(
         &mut self,
         item: TabBarItem,
@@ -589,8 +611,8 @@ impl super::TermWindow {
                 | TabBarItem::WindowButton(_) => {}
             },
             WMEK::Press(MousePress::Right) => match item {
-                TabBarItem::Tab { .. } => {
-                    self.show_tab_navigator();
+                TabBarItem::Tab { tab_idx, .. } => {
+                    self.do_tab_right_click(tab_idx);
                 }
                 TabBarItem::NewTabButton { .. } => {
                     self.do_new_tab_button_click(MousePress::Right);
