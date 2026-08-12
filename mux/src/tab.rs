@@ -667,7 +667,14 @@ impl Tab {
     }
 
     pub fn kill_pane(&self, pane_id: PaneId) -> bool {
-        self.inner.lock().kill_pane(pane_id)
+        let removed = self.inner.lock().kill_pane(pane_id);
+        if removed {
+            let mux = Mux::get();
+            if let Some(window_id) = mux.window_containing_tab(self.tab_id()) {
+                mux.notify(MuxNotification::WindowInvalidated(window_id));
+            }
+        }
+        removed
     }
 
     pub fn kill_panes_in_domain(&self, domain: DomainId) -> bool {
@@ -743,9 +750,17 @@ impl Tab {
         request: SplitRequest,
         pane: Arc<dyn Pane>,
     ) -> anyhow::Result<usize> {
-        self.inner
+        let result = self
+            .inner
             .lock()
-            .split_and_insert(pane_index, request, pane)
+            .split_and_insert(pane_index, request, pane);
+        if result.is_ok() {
+            let mux = Mux::get();
+            if let Some(window_id) = mux.window_containing_tab(self.tab_id()) {
+                mux.notify(MuxNotification::WindowInvalidated(window_id));
+            }
+        }
+        result
     }
 
     pub fn get_zoomed_pane(&self) -> Option<Arc<dyn Pane>> {

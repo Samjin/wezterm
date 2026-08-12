@@ -1533,11 +1533,11 @@ impl TermWindow {
             }
             | MuxNotification::AssignClipboard { .. }
             | MuxNotification::SaveToDownloads { .. }
-            | MuxNotification::WindowCreated(_)
+            | MuxNotification::Empty => return true,
+            MuxNotification::WindowCreated(_)
             | MuxNotification::ActiveWorkspaceChanged(_)
             | MuxNotification::WindowWorkspaceChanged(_)
-            | MuxNotification::WorkspaceRenamed { .. }
-            | MuxNotification::Empty => return true,
+            | MuxNotification::WorkspaceRenamed { .. } => {}
             MuxNotification::Alert {
                 alert: Alert::PaletteChanged { .. },
                 ..
