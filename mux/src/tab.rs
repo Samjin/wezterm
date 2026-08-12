@@ -667,14 +667,7 @@ impl Tab {
     }
 
     pub fn kill_pane(&self, pane_id: PaneId) -> bool {
-        let removed = self.inner.lock().kill_pane(pane_id);
-        if removed {
-            let mux = Mux::get();
-            if let Some(window_id) = mux.window_containing_tab(self.tab_id()) {
-                mux.notify(MuxNotification::WindowInvalidated(window_id));
-            }
-        }
-        removed
+        self.inner.lock().kill_pane(pane_id)
     }
 
     pub fn kill_panes_in_domain(&self, domain: DomainId) -> bool {
