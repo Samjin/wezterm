@@ -496,6 +496,75 @@ fn apply_sizes_from_splits(tree: &Tree, size: &TerminalSize) {
     }
 }
 
+fn split_weight(tree: &Tree, direction: SplitDirection) -> usize {
+    match tree {
+        Tree::Node {
+            left,
+            right,
+            data: Some(data),
+        } if data.direction == direction => {
+            split_weight(left, direction) + split_weight(right, direction)
+        }
+        _ => 1,
+    }
+}
+
+fn equalize_pane_tree(tree: &mut Tree, size: TerminalSize) {
+    let Tree::Node {
+        left,
+        right,
+        data: Some(data),
+    } = tree
+    else {
+        if let Tree::Leaf(pane) = tree {
+            pane.resize(size).ok();
+        }
+        return;
+    };
+
+    let direction = data.direction;
+    let first_weight = split_weight(left, direction);
+    let second_weight = split_weight(right, direction);
+    let (first_min, second_min) = match direction {
+        SplitDirection::Horizontal => (compute_min_size(left).0, compute_min_size(right).0),
+        SplitDirection::Vertical => (compute_min_size(left).1, compute_min_size(right).1),
+    };
+    let total = match direction {
+        SplitDirection::Horizontal => size.cols,
+        SplitDirection::Vertical => size.rows,
+    };
+    let available = total.saturating_sub(1);
+    let first_dimension = available
+        .saturating_mul(first_weight)
+        .checked_div(first_weight + second_weight)
+        .unwrap_or(first_min)
+        .clamp(first_min, available.saturating_sub(second_min));
+    let second_dimension = available.saturating_sub(first_dimension);
+    let cell_size = cell_dimensions(&size);
+    let mut first = size;
+    let mut second = size;
+
+    match direction {
+        SplitDirection::Horizontal => {
+            first.cols = first_dimension;
+            first.pixel_width = first.cols.saturating_mul(cell_size.pixel_width);
+            second.cols = second_dimension;
+            second.pixel_width = second.cols.saturating_mul(cell_size.pixel_width);
+        }
+        SplitDirection::Vertical => {
+            first.rows = first_dimension;
+            first.pixel_height = first.rows.saturating_mul(cell_size.pixel_height);
+            second.rows = second_dimension;
+            second.pixel_height = second.rows.saturating_mul(cell_size.pixel_height);
+        }
+    }
+
+    data.first = first;
+    data.second = second;
+    equalize_pane_tree(left, first);
+    equalize_pane_tree(right, second);
+}
+
 fn cell_dimensions(size: &TerminalSize) -> TerminalSize {
     TerminalSize {
         rows: 1,
@@ -644,6 +713,10 @@ impl Tab {
     /// by the specified amount.
     pub fn adjust_pane_size(&self, direction: PaneDirection, amount: usize) {
         self.inner.lock().adjust_pane_size(direction, amount)
+    }
+
+    pub fn equalize_panes(&self) {
+        self.inner.lock().equalize_panes()
     }
 
     /// Activate an adjacent pane in the specified direction.
@@ -1434,6 +1507,15 @@ impl TabInner {
                 }
             }
         }
+    }
+
+    fn equalize_panes(&mut self) {
+        if self.zoomed.is_some() {
+            return;
+        }
+
+        equalize_pane_tree(self.pane.as_mut().unwrap(), self.size);
+        Mux::try_get().map(|mux| mux.notify(MuxNotification::TabResized(self.id)));
     }
 
     fn activate_pane_direction(&mut self, direction: PaneDirection) {
@@ -2515,6 +2597,97 @@ mod test {
         assert_eq!(24, panes[2].height);
         assert_eq!(400, panes[2].pixel_width);
         assert_eq!(600, panes[2].pixel_height);
+    }
+
+    #[test]
+    fn equalizes_three_horizontal_panes() {
+        let size = TerminalSize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 800,
+            pixel_height: 600,
+            dpi: 96,
+        };
+        let request = SplitRequest {
+            direction: SplitDirection::Horizontal,
+            ..Default::default()
+        };
+        let tab = Tab::new(&size);
+        tab.assign_pane(&FakePane::new(1, size));
+
+        let second = tab.compute_split_size(0, request).unwrap().second;
+        tab.split_and_insert(0, request, FakePane::new(2, second))
+            .unwrap();
+        let third = tab.compute_split_size(1, request).unwrap().second;
+        tab.split_and_insert(1, request, FakePane::new(3, third))
+            .unwrap();
+
+        assert_eq!(
+            tab.iter_panes()
+                .iter()
+                .map(|pane| pane.width)
+                .collect::<Vec<_>>(),
+            vec![39, 19, 20]
+        );
+
+        tab.equalize_panes();
+
+        assert_eq!(
+            tab.iter_panes()
+                .iter()
+                .map(|pane| pane.width)
+                .collect::<Vec<_>>(),
+            vec![26, 26, 26]
+        );
+    }
+
+    #[test]
+    fn equalizes_mixed_pane_layout() {
+        let size = TerminalSize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 800,
+            pixel_height: 600,
+            dpi: 96,
+        };
+        let tab = Tab::new(&size);
+        tab.assign_pane(&FakePane::new(1, size));
+
+        let horizontal = SplitRequest {
+            direction: SplitDirection::Horizontal,
+            ..Default::default()
+        };
+        let second = tab.compute_split_size(0, horizontal).unwrap().second;
+        tab.split_and_insert(0, horizontal, FakePane::new(2, second))
+            .unwrap();
+
+        let vertical = SplitRequest {
+            direction: SplitDirection::Vertical,
+            ..Default::default()
+        };
+        let third = tab.compute_split_size(1, vertical).unwrap().second;
+        tab.split_and_insert(1, vertical, FakePane::new(3, third))
+            .unwrap();
+
+        tab.resize_split_by(0, 10);
+        tab.resize_split_by(1, 5);
+        tab.equalize_panes();
+
+        let panes = tab.iter_panes();
+        assert_eq!(
+            panes
+                .iter()
+                .map(|pane| pane.width)
+                .collect::<Vec<_>>(),
+            vec![39, 40, 40]
+        );
+        assert_eq!(
+            panes
+                .iter()
+                .map(|pane| pane.height)
+                .collect::<Vec<_>>(),
+            vec![24, 11, 12]
+        );
     }
 
     fn is_send_and_sync<T: Send + Sync>() -> bool {

@@ -5,11 +5,11 @@ use anyhow::bail;
 use async_trait::async_trait;
 use codec::*;
 use config::configuration;
-use config::keyassignment::ScrollbackEraseMode;
+use config::keyassignment::{KeyAssignment, ScrollbackEraseMode};
 use mux::domain::DomainId;
 use mux::pane::{
     alloc_pane_id, CachePolicy, CloseReason, ForEachPaneLogicalLine, LogicalLine, Pane, PaneId,
-    Pattern, SearchResult, WithPaneLines,
+    Pattern, PerformAssignmentResult, SearchResult, WithPaneLines,
 };
 use mux::renderable::{RenderableDimensions, StableCursorPosition};
 use mux::tab::TabId;
@@ -256,6 +256,23 @@ impl ClientPane {
 impl Pane for ClientPane {
     fn pane_id(&self) -> PaneId {
         self.local_pane_id
+    }
+
+    fn perform_assignment(&self, assignment: &KeyAssignment) -> PerformAssignmentResult {
+        if assignment != &KeyAssignment::EqualizePanes {
+            return PerformAssignmentResult::Unhandled;
+        }
+
+        let client = Arc::clone(&self.client);
+        let pane_id = self.remote_pane_id;
+        promise::spawn::spawn(async move {
+            client
+                .client
+                .equalize_panes(EqualizePanes { pane_id })
+                .await
+        })
+        .detach();
+        PerformAssignmentResult::Handled
     }
 
     fn get_metadata(&self) -> Value {
