@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+unset NO_COLOR
 
 source=$0
 while [ -L "$source" ]; do
