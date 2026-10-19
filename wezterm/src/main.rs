@@ -23,6 +23,7 @@ mod cli;
 
 #[derive(Debug, Parser)]
 #[command(
+    name = "wezterm-space",
     about = "Wez's Terminal Emulator\nhttp://github.com/wezterm/wezterm",
     version = wezterm_version()
 )]

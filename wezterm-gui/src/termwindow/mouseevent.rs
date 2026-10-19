@@ -362,7 +362,7 @@ impl super::TermWindow {
                     }
                     context.invalidate();
                 }
-                context.set_cursor(Some(MouseCursor::SizeLeftRight));
+                context.set_cursor(Some(CursorIcon::EwResize));
                 self.dragging.replace((item, start_event));
             }
             _ => {
@@ -416,7 +416,7 @@ impl super::TermWindow {
             return;
         };
         if item == WorkspaceBarItem::Resize {
-            context.set_cursor(Some(MouseCursor::SizeLeftRight));
+            context.set_cursor(Some(CursorIcon::EwResize));
             if event.kind == WMEK::Press(MousePress::Left) {
                 self.dragging.replace((ui_item, event));
             }
@@ -447,7 +447,7 @@ impl super::TermWindow {
             }
             _ => {}
         }
-        context.set_cursor(Some(MouseCursor::Arrow));
+        context.set_cursor(Some(CursorIcon::Default));
         context.invalidate();
     }
 

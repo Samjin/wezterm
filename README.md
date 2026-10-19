@@ -12,13 +12,13 @@ User facing docs and guide at: https://wezterm.org/
 
 https://wezterm.org/installation
 
-## Workspace Sidebar Development Build
+## WezTerm Space Development Build
 
-This fork adds an always-visible sidebar on the left side of the window. It
+This fork adds an always-visible space panel on the left side of the window. It
 lists workspaces vertically and supports switching workspaces, creating a new
 workspace with `+`, renaming a workspace with right-click, and resizing the
-sidebar by dragging its right edge. The regular tab bar remains to the right
-of the workspace sidebar.
+panel by dragging its right edge. The regular tab bar remains to the right of
+the space panel.
 
 ### Build and run
 
@@ -27,46 +27,46 @@ Build the release binaries and make the launcher available on your `PATH`:
 ```sh
 cargo build --release
 mkdir -p /path/to/bin
-ln -sfn /path/to/wezterm/scripts/wezterm-sidebar /path/to/bin/wezterm-sidebar
+ln -sfn /path/to/wezterm/scripts/wezterm-space /path/to/bin/wezterm-space
 ```
 
 Replace `/path/to/wezterm` and `/path/to/bin` with your local paths. The
 launcher can then be started with:
 
 ```sh
-wezterm-sidebar
+wezterm-space
 ```
 
 The launcher uses the local overlay at
-`$XDG_CONFIG_HOME/wezterm/wezterm-sidebar.lua`, or
-`$HOME/.config/wezterm/wezterm-sidebar.lua` when `XDG_CONFIG_HOME` is unset.
+`$XDG_CONFIG_HOME/wezterm/wezterm-space.lua`, or
+`$HOME/.config/wezterm/wezterm-space.lua` when `XDG_CONFIG_HOME` is unset.
 The overlay is optional and should remain local when it contains machine-
 specific paths or settings. Do not use `/private/tmp` for the permanent copy.
 
-The `wezterm` CLI delegates GUI commands to a sibling `wezterm-gui` binary.
-If you link `target/release/wezterm` directly instead of using the launcher,
+The `wezterm-space` CLI delegates GUI commands to a sibling `wezterm-gui` binary.
+If you link `target/release/wezterm-space` directly instead of using the launcher,
 link both release binaries into the same bin directory:
 
 ```sh
-ln -sfn /path/to/wezterm/target/release/wezterm /path/to/bin/wezterm-sidebar
+ln -sfn /path/to/wezterm/target/release/wezterm-space /path/to/bin/wezterm-space
 ln -sfn /path/to/wezterm/target/release/wezterm-gui /path/to/bin/wezterm-gui
 ```
 
-`--always-new-process` is an existing WezTerm option. The launcher uses it so
-the sidebar build starts its own GUI process instead of asking an existing
-official WezTerm process to create the window. `--class wezterm-sidebar-dev`
-keeps the sidebar window separate from the official installation.
+The launcher connects to the `space` Unix mux domain. `connect` starts a new
+GUI client for that mux rather than reusing an official WezTerm GUI process.
+`--class wezterm-space-dev` keeps the space window separate from
+the official installation.
 
 ### Update from upstream
 
 Save, commit, or stash any current work before rebasing. Then update the
-sidebar branch and rebuild:
+space branch and rebuild:
 
 ```sh
 git fetch upstream
 git rebase upstream/main
 cargo build --release
-git push --force-with-lease origin workspace-sidebar
+git push --force-with-lease origin wezterm-space
 ```
 
 The launcher continues to use the rebuilt binary. If the branch is shared,
@@ -76,7 +76,7 @@ merge instead of rebasing and push normally:
 git fetch upstream
 git merge upstream/main
 cargo build --release
-git push origin workspace-sidebar
+git push origin wezterm-space
 ```
 
 ## Getting help

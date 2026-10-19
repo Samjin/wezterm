@@ -1510,7 +1510,7 @@ impl TermWindow {
             }
             MuxNotification::WindowRemoved(window_id) => {
                 if window_id != mux_window_id {
-                    // Workspace changes in other windows can change the sidebar.
+                    // Workspace changes in other windows can change the space panel.
                 } else {
                     // The removed window matches our current mux_window_id.
                     // During workspace switches, mux_window_id may be stale.
@@ -3318,7 +3318,7 @@ impl TermWindow {
             .get_window(mux_window_id)
             .and_then(|mux_window| {
                 let workspace = mux_window.get_workspace().to_string();
-                (mux_window.iter().count() == 1).then_some(workspace)
+                (mux_window.count_tabs() == 1).then_some(workspace)
             })
             .filter(|workspace| mux.iter_windows_in_workspace(workspace).len() == 1);
 

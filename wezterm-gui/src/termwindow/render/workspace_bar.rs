@@ -9,7 +9,7 @@ use wezterm_term::color::ColorAttribute;
 use wezterm_term::Line;
 use window::color::LinearRgba;
 
-const DEFAULT_WORKSPACE_BAR_WIDTH: usize = 400;
+const DEFAULT_WORKSPACE_BAR_WIDTH: usize = 350;
 const MIN_WORKSPACE_BAR_WIDTH: usize = 120;
 const MIN_TERMINAL_COLUMNS: usize = 10;
 const RESIZE_HANDLE_WIDTH: usize = 8;
